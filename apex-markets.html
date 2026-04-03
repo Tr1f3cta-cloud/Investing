@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ApexMarkets" />
+  <meta name="theme-color" content="#050b14" />
+  <title>ApexMarkets</title>
+
+  <!-- PWA manifest inline -->
+  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22ApexMarkets%22%2C%22short_name%22%3A%22Apex%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23050b14%22%2C%22theme_color%22%3A%22%23050b14%22%2C%22icons%22%3A%5B%5D%7D" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- React + ReactDOM + Babel (in-browser JSX transpiler) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #050b14; }
+    #root { height: 100%; }
+    body { -webkit-tap-highlight-color: transparent; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes spin  { to { transform: rotate(360deg); } }
+    .acard { transition: all 0.15s; }
+    .acard:hover { border-color: #22d3a040 !important; transform: translateY(-1px); }
+    input::placeholder { color: #2a4a6a; }
+    select option { background: #0a1628; }
+    ::-webkit-scrollbar { width: 3px; background: #050b14; }
+    ::-webkit-scrollbar-thumb { background: #1a2d4a; border-radius: 2px; }
+    /* Safe area support for iPhone notch */
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+    @media (min-width: 640px) {
+      .bnav  { display: none !important; }
+      .stabs { display: flex !important; }
+      .mlayout { flex-direction: row !important; }
+    }
+    /* Loading screen */
+    #loading {
+      position: fixed; inset: 0; background: #050b14;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-family: 'IBM Plex Mono', monospace; color: #22d3a0; gap: 16px; z-index: 9999;
+    }
+    #loading .logo { font-size: 22px; font-weight: 700; letter-spacing: 0.15em; }
+    #loading .spinner { width: 28px; height: 28px; border: 2px solid #1a2d4a; border-top-color: #22d3a0; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="logo">◈ APEX<span>MARKETS</span></div>
+    <div class="spinner"></div>
+    <div style="font-size:10px;color:#4a7aaa;letter-spacing:0.1em;">LOADING...</div>
+  </div>
+  <div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── PALETTE ──────────────────────────────────────────────────────────────────
+const C = {
+  bg:"#050b14", bg2:"#0a1628", bg3:"#060d1c", bg4:"#0d1f3c",
+  border:"#1a2d4a", border2:"#0d1f3c",
+  text:"#c9d6e8", textD:"#4a7aaa", textB:"#e2f0ff",
+  green:"#22d3a0", red:"#f43f5e", amber:"#f59e0b", blue:"#3b82f6",
+  purple:"#8b5cf6", star:"#fbbf24",
+};
+
+// ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
+const DEFAULT_WATCHLIST = [
+  { id:"bitcoin",  symbol:"BTC",    name:"Bitcoin",      class:"crypto",      exchange:"Crypto" },
+  { id:"ethereum", symbol:"ETH",    name:"Ethereum",     class:"crypto",      exchange:"Crypto" },
+  { id:"solana",   symbol:"SOL",    name:"Solana",       class:"crypto",      exchange:"Crypto" },
+  { id:"ripple",   symbol:"XRP",    name:"XRP",          class:"crypto",      exchange:"Crypto" },
+  { id:"AAPL",     symbol:"AAPL",   name:"Apple",        class:"stocks",      exchange:"NASDAQ" },
+  { id:"MSFT",     symbol:"MSFT",   name:"Microsoft",    class:"stocks",      exchange:"NASDAQ" },
+  { id:"NVDA",     symbol:"NVDA",   name:"NVIDIA",       class:"stocks",      exchange:"NASDAQ" },
+  { id:"TSLA",     symbol:"TSLA",   name:"Tesla",        class:"stocks",      exchange:"NASDAQ" },
+  { id:"AMZN",     symbol:"AMZN",   name:"Amazon",       class:"stocks",      exchange:"NASDAQ" },
+  { id:"GOOGL",    symbol:"GOOGL",  name:"Alphabet",     class:"stocks",      exchange:"NASDAQ" },
+  { id:"^GSPC",    symbol:"SPX",    name:"S&P 500",      class:"indices",     exchange:"INDEX"  },
+  { id:"^FTSE",    symbol:"FTSE",   name:"FTSE 100",     class:"indices",     exchange:"INDEX"  },
+  { id:"^N225",    symbol:"N225",   name:"Nikkei 225",   class:"indices",     exchange:"INDEX"  },
+  { id:"^GDAXI",   symbol:"DAX",    name:"DAX 40",       class:"indices",     exchange:"INDEX"  },
+  { id:"GC=F",     symbol:"GOLD",   name:"Gold",         class:"commodities", exchange:"COMEX"  },
+  { id:"SI=F",     symbol:"SILVER", name:"Silver",       class:"commodities", exchange:"COMEX"  },
+  { id:"CL=F",     symbol:"OIL",    name:"Crude Oil",    class:"commodities", exchange:"NYMEX"  },
+];
+
+const SEED = {
+  bitcoin:83200, ethereum:1820, solana:128, ripple:2.14,
+  AAPL:198.5, MSFT:378.2, NVDA:875.4, TSLA:172.3, AMZN:198.7, GOOGL:163.4,
+  "^GSPC":5218, "^FTSE":8290, "^N225":38400, "^GDAXI":17800,
+  "GC=F":3042, "SI=F":33.8, "CL=F":71.4,
+};
+
+const CLASS_COLORS = { crypto:C.amber, stocks:C.blue, indices:C.purple, commodities:C.red, etf:"#14b8a6", other:C.textD };
+
+const ACCOUNT_TYPES = {
+  exchange:{ label:"Exchange", icon:"⬡", color:C.amber },
+  wallet:  { label:"Wallet",   icon:"◈", color:C.green },
+  broker:  { label:"Broker",   icon:"▣", color:C.blue  },
+  bank:    { label:"Bank/ISA", icon:"◉", color:C.purple},
+};
+
+const EXCHANGE_FLAGS = {
+  LSE:"🇬🇧","L":"🇬🇧", TSX:"🇨🇦","TO":"🇨🇦", ASX:"🇦🇺","AX":"🇦🇺",
+  "F":"🇩🇪",XETRA:"🇩🇪",ETR:"🇩🇪", "PA":"🇫🇷",EPA:"🇫🇷",
+  "HK":"🇭🇰",HKEX:"🇭🇰", "T":"🇯🇵",TYO:"🇯🇵",
+  "SS":"🇨🇳","SZ":"🇨🇳", "NS":"🇮🇳","BO":"🇮🇳",
+  "MI":"🇮🇹",BIT:"🇮🇹", "MC":"🇪🇸",BME:"🇪🇸",
+  "AS":"🇳🇱","SW":"🇨🇭","BR":"🇧🇷","KS":"🇰🇷","NZ":"🇳🇿",
+  NASDAQ:"🇺🇸",NYSE:"🇺🇸",AMEX:"🇺🇸",NYQ:"🇺🇸",NMS:"🇺🇸",NGM:"🇺🇸",
+  Crypto:"₿",COMEX:"🏅",NYMEX:"🛢",INDEX:"📊",
+};
+
+const QUOTE_TYPE_META = {
+  EQUITY:      { label:"Stock",   color:C.blue   },
+  ETF:         { label:"ETF",     color:"#14b8a6"},
+  CRYPTOCURRENCY:{ label:"Crypto",color:C.amber  },
+  INDEX:       { label:"Index",   color:C.purple },
+  FUTURE:      { label:"Futures", color:C.red    },
+  MUTUALFUND:  { label:"Fund",    color:"#6366f1"},
+  CURRENCY:    { label:"FX",      color:"#0ea5e9"},
+};
+
+const NEWS = [
+  { title:"Fed signals potential rate cuts amid cooling inflation data", source:"Reuters",  time:"2h ago",  tag:"Macro",       sentiment:"bullish" },
+  { title:"Bitcoin surges past $83K as institutional demand grows",     source:"CoinDesk", time:"3h ago",  tag:"Crypto",      sentiment:"bullish" },
+  { title:"NVIDIA beats earnings estimates on AI chip demand",          source:"Bloomberg",time:"5h ago",  tag:"Stocks",      sentiment:"bullish" },
+  { title:"Gold hits new highs as dollar weakens on jobs data",         source:"FT",       time:"6h ago",  tag:"Commodities", sentiment:"bullish" },
+  { title:"FTSE 100 edges lower as energy stocks drag",                 source:"BBC",      time:"7h ago",  tag:"Indices",     sentiment:"bearish" },
+  { title:"Tesla delivery numbers miss expectations for Q1",            source:"WSJ",      time:"8h ago",  tag:"Stocks",      sentiment:"bearish" },
+  { title:"Oil slips on surprise inventory build, OPEC outlook uncertain",source:"Reuters",time:"10h ago", tag:"Commodities", sentiment:"bearish" },
+  { title:"S&P 500 holds near record highs ahead of earnings season",   source:"CNBC",     time:"12h ago", tag:"Indices",     sentiment:"neutral" },
+  { title:"Ethereum ETF sees record inflows as institutional adoption rises",source:"CoinDesk",time:"1d ago",tag:"Crypto",   sentiment:"bullish" },
+  { title:"Nikkei 225 rallies as yen weakens on BOJ comments",          source:"Nikkei",   time:"1d ago",  tag:"Indices",     sentiment:"bullish" },
+];
+
+const DEFAULT_ACCOUNTS = [
+  { id:"acc_1", name:"Coinbase",            type:"exchange", currency:"USD",
+    holdings:[
+      { assetId:"bitcoin",  symbol:"BTC", name:"Bitcoin",  qty:0.35, avgCost:71000, trades:[{date:"2024-01-15",type:"buy",qty:0.35,price:71000}] },
+      { assetId:"ethereum", symbol:"ETH", name:"Ethereum", qty:2.5,  avgCost:1650,  trades:[{date:"2024-02-10",type:"buy",qty:2.5, price:1650 }] },
+    ]},
+  { id:"acc_2", name:"Ledger Nano",         type:"wallet",   currency:"USD",
+    holdings:[
+      { assetId:"bitcoin", symbol:"BTC", name:"Bitcoin", qty:0.15, avgCost:68500, trades:[{date:"2023-11-20",type:"buy",qty:0.15,price:68500}] },
+      { assetId:"solana",  symbol:"SOL", name:"Solana",  qty:50,   avgCost:105,   trades:[{date:"2024-03-01",type:"buy",qty:50,  price:105  }] },
+    ]},
+  { id:"acc_3", name:"Interactive Brokers", type:"broker",   currency:"USD",
+    holdings:[
+      { assetId:"AAPL", symbol:"AAPL", name:"Apple",  qty:15, avgCost:182, trades:[{date:"2024-01-08",type:"buy",qty:15,price:182}] },
+      { assetId:"NVDA", symbol:"NVDA", name:"NVIDIA", qty:5,  avgCost:780, trades:[{date:"2024-02-20",type:"buy",qty:5, price:780}] },
+    ]},
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function makeId()  { return `id_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
+function today()   { return new Date().toISOString().slice(0,10); }
+function ls(k,fb)  { try{const s=localStorage.getItem(k);return s?JSON.parse(s):fb;}catch{return fb;} }
+function lsSave(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
+
+function formatPrice(p) {
+  if(!p && p!==0) return "—";
+  if(p>=10000) return `$${p.toLocaleString("en-US",{maximumFractionDigits:0})}`;
+  if(p>=1000)  return `$${p.toLocaleString("en-US",{maximumFractionDigits:2})}`;
+  if(p>=10)    return `$${p.toFixed(2)}`;
+  if(p>=0.01)  return `$${p.toFixed(4)}`;
+  return `$${p.toFixed(6)}`;
+}
+function fmtCh(c) { if(c==null)return"—"; return`${c>=0?"+":""}${c.toFixed(2)}%`; }
+function exFlag(ex) {
+  if(!ex) return "";
+  const parts = ex.toUpperCase().split(/[,.\s]/);
+  for(const p of parts) if(EXCHANGE_FLAGS[p]) return EXCHANGE_FLAGS[p];
+  return EXCHANGE_FLAGS[ex] || "🌐";
+}
+
+function genSpark(base, n=20) {
+  const d=[]; let p=base*(0.95+Math.random()*0.1);
+  for(let i=0;i<n;i++){p*=1+(Math.random()-0.48)*0.02;d.push(p);}
+  d[d.length-1]=base; return d;
+}
+
+// ─── SPARKLINE ────────────────────────────────────────────────────────────────
+function Sparkline({data, positive, width=80, height=28}) {
+  const uid = useRef(`sp_${makeId()}`).current;
+  if(!data||data.length<2) return null;
+  const mn=Math.min(...data), mx=Math.max(...data), rng=mx-mn||1;
+  const pts=data.map((v,i)=>`${(i/(data.length-1))*width},${height-((v-mn)/rng)*height}`).join(" ");
+  const col=positive?C.green:C.red;
+  const x0=pts.split(" ")[0].split(",")[0], xN=pts.split(" ").at(-1).split(",")[0];
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{overflow:"visible",flexShrink:0}}>
+      <defs>
+        <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={col} stopOpacity="0.2"/>
+          <stop offset="100%" stopColor={col} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points={`${x0},${height} ${pts} ${xN},${height}`} fill={`url(#${uid})`}/>
+      <polyline points={pts} fill="none" stroke={col} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// ─── GLOBAL SEARCH ────────────────────────────────────────────────────────────
+function GlobalSearch({onSelect, compact=false}) {
+  const [q, setQ]         = useState("");
+  const [results, setRes] = useState([]);
+  const [loading, setLd]  = useState(false);
+  const [open, setOpen]   = useState(false);
+  const debRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const handler = e => { if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+  }, []);
+
+  async function doSearch(val) {
+    if(!val||val.trim().length<1){setRes([]);setOpen(false);return;}
+    setLd(true);
+    try {
+      const url=`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(val)}&quotesCount=10&newsCount=0&enableFuzzyQuery=true`;
+      const proxy=`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      const r=await fetch(proxy,{cache:"no-store"});
+      const raw=await r.json();
+      const parsed=JSON.parse(raw.contents);
+      const quotes=(parsed?.finance?.result?.[0]?.quotes||[]).filter(q=>q.symbol&&(q.shortname||q.longname)).slice(0,9);
+      setRes(quotes); setOpen(true);
+    } catch {
+      const v=val.toUpperCase();
+      const fb=DEFAULT_WATCHLIST.filter(a=>a.symbol.includes(v)||a.name.toUpperCase().includes(v)).slice(0,6)
+        .map(a=>({symbol:a.symbol,shortname:a.name,quoteType:"EQUITY",exchange:a.exchange}));
+      setRes(fb); setOpen(true);
+    }
+    setLd(false);
+  }
+
+  function onChange(e) {
+    const val=e.target.value; setQ(val);
+    clearTimeout(debRef.current);
+    if(!val.trim()){setRes([]);setOpen(false);return;}
+    debRef.current=setTimeout(()=>doSearch(val),380);
+  }
+
+  function select(item) {
+    const qt=item.quoteType||"EQUITY";
+    const cls=qt==="CRYPTOCURRENCY"?"crypto":qt==="ETF"?"etf":qt==="INDEX"?"indices":qt==="FUTURE"?"commodities":"stocks";
+    onSelect({id:item.symbol,symbol:item.symbol,name:item.shortname||item.longname||item.symbol,class:cls,exchange:item.exchange||"",quoteType:qt});
+    setQ(""); setRes([]); setOpen(false);
+  }
+
+  return (
+    <div ref={wrapRef} style={{position:"relative",width:"100%"}}>
+      <div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.textD,pointerEvents:"none"}}>
+          {loading?"⟳":"⌕"}
+        </span>
+        <input value={q} onChange={onChange} onFocus={()=>results.length>0&&setOpen(true)}
+          placeholder={compact?"Search markets…":"Search global markets — stocks, ETFs, crypto, indices, FX…"}
+          autoComplete="off"
+          style={{background:C.bg3,border:`1px solid ${open&&results.length?C.green:C.border}`,
+            borderRadius:open&&results.length?"8px 8px 0 0":8,color:C.text,
+            padding:compact?"9px 12px 9px 34px":"11px 14px 11px 36px",
+            fontSize:compact?12:13,fontFamily:"inherit",width:"100%",outline:"none",transition:"border-color 0.15s"}}
+        />
+      </div>
+      {open&&results.length>0&&(
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:500,
+          background:C.bg2,border:`1px solid ${C.green}`,borderTop:`1px solid ${C.border}`,
+          borderRadius:"0 0 10px 10px",boxShadow:"0 12px 40px rgba(0,0,0,0.7)",maxHeight:300,overflowY:"auto"}}>
+          {results.map((item,i)=>{
+            const qm=QUOTE_TYPE_META[item.quoteType]||{label:item.quoteType||"Asset",color:C.textD};
+            const flag=exFlag(item.exchange||"");
+            return (
+              <div key={i} onClick={()=>select(item)}
+                style={{padding:"11px 14px",cursor:"pointer",borderBottom:`1px solid ${C.border2}`,
+                  display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                onMouseEnter={e=>e.currentTarget.style.background=C.bg4}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+                    <span style={{fontSize:13,fontWeight:700,color:C.textB}}>{item.symbol}</span>
+                    <span style={{fontSize:9,color:qm.color,background:`${qm.color}18`,border:`1px solid ${qm.color}40`,padding:"1px 5px",borderRadius:3}}>{qm.label}</span>
+                    {flag&&<span style={{fontSize:12}}>{flag}</span>}
+                  </div>
+                  <div style={{fontSize:11,color:C.textD,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:240}}>
+                    {item.shortname||item.longname||""}
+                    {item.exchange&&<span style={{marginLeft:6,fontSize:10}}>· {item.exchange}</span>}
+                  </div>
+                </div>
+                <span style={{color:C.green,fontSize:18,marginLeft:10,flexShrink:0}}>+</span>
+              </div>
+            );
+          })}
+          <div style={{padding:"6px 14px",fontSize:9,color:C.textD,borderTop:`1px solid ${C.border2}`}}>
+            ⌕ Yahoo Finance · Global markets
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BOTTOM SHEET ─────────────────────────────────────────────────────────────
+function Sheet({title, onClose, children}) {
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:400,background:"rgba(0,0,0,0.82)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}
+      onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:"16px 16px 0 0",
+          width:"100%",maxWidth:540,padding:"20px 20px 36px",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 18px"}}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.textB}}>{title}</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.textD,fontSize:22,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── ASSET CARD ───────────────────────────────────────────────────────────────
+function AssetCard({asset, price, change, sparkline, isFav, onToggleFav}) {
+  const pos=(change??0)>=0;
+  const col=CLASS_COLORS[asset.class]||C.textD;
+  const sig=change>3?{l:"BUY",c:C.green}:change<-3?{l:"SELL",c:C.red}:{l:"HOLD",c:C.amber};
+  const flag=exFlag(asset.exchange||"");
+  return (
+    <div className="acard" style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,padding:13,position:"relative"}}>
+      <button onClick={e=>{e.stopPropagation();onToggleFav(asset);}}
+        style={{position:"absolute",top:9,right:9,background:"none",border:"none",cursor:"pointer",
+          fontSize:15,lineHeight:1,color:isFav?C.star:C.border,transition:"color 0.15s",padding:2}}
+        title={isFav?"Remove from favourites":"Add to favourites"}>
+        {isFav?"★":"☆"}
+      </button>
+      <div style={{paddingRight:22}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+          <span style={{fontSize:12,fontWeight:700,color:C.textB}}>{asset.symbol}</span>
+          {flag&&<span style={{fontSize:11}}>{flag}</span>}
+        </div>
+        <div style={{fontSize:9,color:C.textD,marginBottom:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:130}}>{asset.name}</div>
+      </div>
+      <div style={{fontSize:15,fontWeight:700,color:C.textB}}>{formatPrice(price)}</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:7}}>
+        <span style={{fontSize:11,color:pos?C.green:C.red}}>{pos?"▲":"▼"}{fmtCh(change)}</span>
+        <span style={{fontSize:8,color:sig.c,background:`${sig.c}15`,border:`1px solid ${sig.c}40`,padding:"2px 6px",borderRadius:3,fontWeight:700}}>{sig.l}</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+        <span style={{fontSize:8,color:col,background:`${col}12`,border:`1px solid ${col}30`,padding:"2px 6px",borderRadius:3}}>
+          {(asset.class||"ASSET").toUpperCase().slice(0,5)}
+        </span>
+        <Sparkline data={sparkline} positive={pos} width={70} height={24}/>
+      </div>
+    </div>
+  );
+}
+
+// ─── BUTTON HELPERS ───────────────────────────────────────────────────────────
+const inp={background:C.bg3,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,padding:"10px 12px",fontSize:13,fontFamily:"inherit",width:"100%",outline:"none"};
+const lbl={fontSize:10,color:C.textD,marginBottom:5,letterSpacing:"0.08em",textTransform:"uppercase",display:"block"};
+
+function PBtn({children,onClick,style={},disabled=false}) {
+  return <button onClick={onClick} disabled={disabled} style={{background:disabled?`${C.green}08`:`${C.green}18`,border:`1px solid ${disabled?C.border:C.green}`,borderRadius:7,color:disabled?C.textD:C.green,padding:"10px 16px",cursor:disabled?"not-allowed":"pointer",fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"inherit",fontWeight:600,...style}}>{children}</button>;
+}
+function DBtn({children,onClick,style={}}) {
+  return <button onClick={onClick} style={{background:`${C.red}10`,border:`1px solid ${C.red}55`,borderRadius:7,color:C.red,padding:"10px 14px",cursor:"pointer",fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"inherit",fontWeight:600,...style}}>{children}</button>;
+}
+function GBtn({children,onClick,style={}}) {
+  return <button onClick={onClick} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:7,color:C.textD,padding:"8px 12px",cursor:"pointer",fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"inherit",...style}}>{children}</button>;
+}
+function SecTitle({children}) {
+  return <div style={{fontSize:10,color:C.textD,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:12,borderLeft:`3px solid ${C.green}`,paddingLeft:8,fontWeight:600}}>{children}</div>;
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const [watchlist, setWatchlist] = useState(()=>ls("apex_watchlist",DEFAULT_WATCHLIST));
+  const [favIds,    setFavIds]    = useState(()=>ls("apex_favs",["bitcoin","AAPL","GC=F","^GSPC"]));
+  const [accounts,  setAccounts]  = useState(()=>ls("apex_accounts_v3",DEFAULT_ACCOUNTS));
+  const [prices,    setPrices]    = useState({});
+  const [sparks,    setSparks]    = useState({});
+  const [tab,       setTab]       = useState("markets");
+  const [cls,       setCls]       = useState("all");
+  const [newsF,     setNewsF]     = useState("All");
+  const [tickOff,   setTickOff]   = useState(0);
+  const [openAcc,   setOpenAcc]   = useState(null);
+  const [sheet,     setSheet]     = useState(null);
+  const [ctx,       setCtx]       = useState({});
+  const [aForm,     setAForm]     = useState({name:"",type:"exchange",currency:"USD"});
+  const [hForm,     setHForm]     = useState({assetObj:null,qty:"",cost:"",date:today()});
+  const [tForm,     setTForm]     = useState({type:"buy",qty:"",price:"",date:today()});
+
+  useEffect(()=>lsSave("apex_watchlist",watchlist),[watchlist]);
+  useEffect(()=>lsSave("apex_favs",favIds),[favIds]);
+  useEffect(()=>lsSave("apex_accounts_v3",accounts),[accounts]);
+
+  useEffect(()=>{
+    const sp={};
+    watchlist.forEach(a=>{ sp[a.id]=genSpark(SEED[a.id]||SEED[a.symbol]||100); });
+    setSparks(sp);
+  },[watchlist.length]);
+
+  const fetchCrypto = useCallback(async () => {
+    const ca=watchlist.filter(a=>a.class==="crypto");
+    if(!ca.length) return {};
+    try {
+      const ids=ca.map(a=>a.id).join(",");
+      const r=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,{cache:"no-store"});
+      if(!r.ok) throw new Error();
+      const d=await r.json();
+      const u={};
+      ca.forEach(a=>{ if(d[a.id]) u[a.id]={price:d[a.id].usd,change:d[a.id].usd_24h_change}; });
+      return u;
+    } catch {
+      const u={};
+      ca.forEach(a=>{ const b=SEED[a.id]||100; u[a.id]={price:b*(1+(Math.random()-0.5)*0.06),change:(Math.random()-0.45)*8,sim:true}; });
+      return u;
+    }
+  },[watchlist]);
+
+  const fetchOthers = useCallback(()=>{
+    const u={};
+    watchlist.filter(a=>a.class!=="crypto").forEach(a=>{
+      const b=SEED[a.id]||SEED[a.symbol]||100;
+      u[a.id]={price:b*(1+(Math.random()-0.5)*0.04),change:(Math.random()-0.45)*4,sim:true};
+    });
+    return u;
+  },[watchlist]);
+
+  const refresh = useCallback(async()=>{
+    const [c,o]=await Promise.all([fetchCrypto(),fetchOthers()]);
+    setPrices(p=>({...p,...c,...o}));
+  },[fetchCrypto,fetchOthers]);
+
+  useEffect(()=>{
+    refresh();
+    const t=setInterval(refresh,30000);
+    return()=>clearInterval(t);
+  },[refresh]);
+
+  useEffect(()=>{
+    const t=setInterval(()=>setTickOff(x=>x+0.4),25);
+    return()=>clearInterval(t);
+  },[]);
+
+  // Hide loading screen once mounted
+  useEffect(()=>{
+    const el=document.getElementById("loading");
+    if(el){setTimeout(()=>el.remove(),300);}
+  },[]);
+
+  const gp = id => prices[id]?.price||SEED[id]||0;
+  const gc = id => prices[id]?.change??0;
+
+  function toggleFav(asset) {
+    setFavIds(p=>p.includes(asset.id)?p.filter(x=>x!==asset.id):[...p,asset.id]);
+    if(!watchlist.find(w=>w.id===asset.id)) setWatchlist(p=>[...p,asset]);
+  }
+
+  function addToWL(asset) {
+    if(watchlist.find(w=>w.id===asset.id)) return;
+    setWatchlist(p=>[...p,asset]);
+    setSparks(p=>({...p,[asset.id]:genSpark(SEED[asset.id]||100)}));
+    setPrices(p=>({...p,[asset.id]:{price:(SEED[asset.id]||100)*(1+(Math.random()-0.5)*0.04),change:(Math.random()-0.45)*4,sim:true}}));
+  }
+
+  function removeFromWL(id) { setWatchlist(p=>p.filter(a=>a.id!==id)); setFavIds(p=>p.filter(x=>x!==id)); }
+
+  function doAddAccount() {
+    if(!aForm.name.trim()) return;
+    setAccounts(p=>[...p,{id:makeId(),name:aForm.name.trim(),type:aForm.type,currency:aForm.currency,holdings:[]}]);
+    setAForm({name:"",type:"exchange",currency:"USD"}); setSheet(null);
+  }
+
+  function doAddHolding(accId) {
+    const asset=hForm.assetObj;
+    if(!asset||!hForm.qty||!hForm.cost) return;
+    const qty=parseFloat(hForm.qty), cost=parseFloat(hForm.cost);
+    const trade={date:hForm.date,type:"buy",qty,price:cost};
+    addToWL(asset);
+    setAccounts(prev=>prev.map(acc=>{
+      if(acc.id!==accId) return acc;
+      const ex=acc.holdings.find(h=>h.assetId===asset.id);
+      if(ex) return{...acc,holdings:acc.holdings.map(h=>h.assetId===asset.id?{...h,qty:h.qty+qty,avgCost:(h.avgCost*h.qty+cost*qty)/(h.qty+qty),trades:[...h.trades,trade]}:h)};
+      return{...acc,holdings:[...acc.holdings,{assetId:asset.id,symbol:asset.symbol,name:asset.name,qty,avgCost:cost,trades:[trade]}]};
+    }));
+    setHForm({assetObj:null,qty:"",cost:"",date:today()}); setSheet(null);
+  }
+
+  function doAddTrade(accId,assetId) {
+    const qty=parseFloat(tForm.qty),price=parseFloat(tForm.price);
+    if(!qty||!price) return;
+    const trade={date:tForm.date,type:tForm.type,qty,price};
+    setAccounts(prev=>prev.map(acc=>{
+      if(acc.id!==accId) return acc;
+      return{...acc,holdings:acc.holdings.map(h=>{
+        if(h.assetId!==assetId) return h;
+        const nq=tForm.type==="buy"?h.qty+qty:Math.max(0,h.qty-qty);
+        const na=tForm.type==="buy"?(h.avgCost*h.qty+price*qty)/(h.qty+qty):h.avgCost;
+        return{...h,qty:nq,avgCost:na,trades:[...(h.trades||[]),trade]};
+      })};
+    }));
+    setTForm({type:"buy",qty:"",price:"",date:today()}); setSheet(null);
+  }
+
+  function removeHolding(accId,assetId){ setAccounts(p=>p.map(a=>a.id===accId?{...a,holdings:a.holdings.filter(h=>h.assetId!==assetId)}:a)); }
+  function deleteAccount(id){ setAccounts(p=>p.filter(a=>a.id!==id)); setOpenAcc(null); }
+
+  // Derived
+  const consol={};
+  accounts.forEach(acc=>acc.holdings.forEach(h=>{
+    if(!consol[h.assetId]) consol[h.assetId]={...h,tQty:0,tCost:0,accs:[]};
+    consol[h.assetId].tQty+=h.qty;
+    consol[h.assetId].tCost+=h.avgCost*h.qty;
+    consol[h.assetId].accs.push(acc.name);
+  }));
+
+  const totalVal  = Object.values(consol).reduce((s,h)=>s+gp(h.assetId)*h.tQty,0);
+  const totalCost = Object.values(consol).reduce((s,h)=>s+h.tCost,0);
+  const totalPnl  = totalVal-totalCost;
+  const totalPct  = totalCost>0?(totalPnl/totalCost)*100:0;
+
+  const favAssets  = watchlist.filter(a=>favIds.includes(a.id));
+  const filtAssets = cls==="all"?watchlist:watchlist.filter(a=>a.class===cls);
+  const filtNews   = newsF==="All"?NEWS:NEWS.filter(n=>n.tag===newsF);
+  const classes    = ["all",...new Set(watchlist.map(a=>a.class).filter(Boolean))];
+
+  const TABS = [
+    {id:"markets",   icon:"◈", label:"Markets"   },
+    {id:"favourites",icon:"★", label:"Favourites" },
+    {id:"portfolio", icon:"▣", label:"Portfolio"  },
+    {id:"accounts",  icon:"⬡", label:"Accounts"  },
+    {id:"news",      icon:"◉", label:"News"       },
+  ];
+
+  const tickTxt = watchlist.slice(0,12).map(a=>`${a.symbol} ${formatPrice(gp(a.id))} ${gc(a.id)>=0?"▲":"▼"}${Math.abs(gc(a.id)).toFixed(2)}%`).join("   ·   ");
+
+  return (
+    <div style={{fontFamily:"'IBM Plex Mono','Courier New',monospace",background:C.bg,color:C.text,minHeight:"100vh",paddingBottom:72}}>
+
+      {/* HEADER */}
+      <div style={{background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:"11px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+        <div style={{fontSize:15,fontWeight:700,letterSpacing:"0.15em",color:C.textB}}>
+          <span style={{color:C.green}}>◈ </span>APEX<span style={{color:C.green}}>MARKETS</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.textD}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:C.green,boxShadow:`0 0 6px ${C.green}`,animation:"pulse 2s infinite"}}/>
+            LIVE
+          </div>
+          <GBtn onClick={refresh} style={{padding:"4px 10px"}}>↻</GBtn>
+        </div>
+      </div>
+
+      {/* TICKER */}
+      <div style={{background:C.bg3,borderBottom:`1px solid ${C.border}`,padding:"5px 0",overflow:"hidden",whiteSpace:"nowrap"}}>
+        <span style={{display:"inline-block",transform:`translateX(-${tickOff%(tickTxt.length*7.5)}px)`,fontSize:10,color:C.textD,letterSpacing:"0.05em",paddingLeft:"100%"}}>
+          {tickTxt}{"   ·   "}{tickTxt}
+        </span>
+      </div>
+
+      <div className="mlayout" style={{display:"flex",flexDirection:"column"}}>
+
+        {/* SIDE TABS desktop */}
+        <div className="stabs" style={{display:"none",flexDirection:"column",width:130,borderRight:`1px solid ${C.border}`,background:C.bg2,paddingTop:8,flexShrink:0,minHeight:"calc(100vh - 90px)",position:"sticky",top:90,alignSelf:"flex-start"}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              background:tab===t.id?`${C.green}10`:"none",border:"none",
+              borderLeft:`3px solid ${tab===t.id?C.green:"transparent"}`,
+              color:tab===t.id?(t.id==="favourites"?C.star:C.green):C.textD,
+              padding:"14px 16px",cursor:"pointer",textAlign:"left",
+              fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",
+              fontFamily:"inherit",fontWeight:600,display:"flex",alignItems:"center",gap:8}}>
+              <span>{t.icon}</span>{t.label}
+              {t.id==="favourites"&&favIds.length>0&&(
+                <span style={{marginLeft:"auto",fontSize:9,background:`${C.star}20`,color:C.star,border:`1px solid ${C.star}40`,borderRadius:10,padding:"1px 5px"}}>{favIds.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* CONTENT */}
+        <div style={{flex:1,padding:16,width:"100%",maxWidth:960}}>
+
+          {/* ══ MARKETS ══ */}
+          {tab==="markets"&&<>
+            <div style={{marginBottom:16}}>
+              <GlobalSearch onSelect={asset=>{addToWL(asset);}}/>
+              <div style={{fontSize:9,color:C.textD,marginTop:5}}>Search any stock, ETF, crypto or index from any global exchange · Results added to watchlist</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+              {[
+                {label:"Portfolio",value:`$${totalVal.toLocaleString("en-US",{maximumFractionDigits:0})}`,sub:`${totalPnl>=0?"+":""}${totalPct.toFixed(1)}%`,pos:totalPnl>=0},
+                {label:"BTC",value:formatPrice(gp("bitcoin")),sub:fmtCh(gc("bitcoin")),pos:gc("bitcoin")>=0},
+                {label:"S&P 500",value:formatPrice(gp("^GSPC")),sub:fmtCh(gc("^GSPC")),pos:gc("^GSPC")>=0},
+              ].map(s=>(
+                <div key={s.label} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:"11px 10px"}}>
+                  <div style={{fontSize:9,color:C.textD,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>{s.label}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:C.textB,wordBreak:"break-all"}}>{s.value}</div>
+                  <div style={{fontSize:11,color:s.pos?C.green:C.red,marginTop:2}}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+              {classes.map(c=>(
+                <button key={c} onClick={()=>setCls(c)} style={{padding:"4px 12px",fontSize:10,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",borderRadius:4,fontFamily:"inherit",fontWeight:600,border:`1px solid ${cls===c?C.green:C.border}`,background:cls===c?`${C.green}15`:"transparent",color:cls===c?C.green:C.textD}}>{c}</button>
+              ))}
+              <span style={{fontSize:9,color:C.textD,marginLeft:"auto"}}>{filtAssets.length} assets</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+              {filtAssets.map(asset=>(
+                <AssetCard key={asset.id} asset={asset} price={gp(asset.id)} change={gc(asset.id)} sparkline={sparks[asset.id]} isFav={favIds.includes(asset.id)} onToggleFav={toggleFav}/>
+              ))}
+            </div>
+            {filtAssets.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.textD,fontSize:12}}>No assets. Use search above to add global assets.</div>}
+            <div style={{marginTop:12,fontSize:9,color:"#2a4a6a"}}>ⓘ Crypto via CoinGecko API · Other prices simulated · ☆ to favourite</div>
+          </>}
+
+          {/* ══ FAVOURITES ══ */}
+          {tab==="favourites"&&<>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <SecTitle>Favourites ★</SecTitle>
+              <span style={{fontSize:10,color:C.textD}}>{favIds.length} starred</span>
+            </div>
+            {favAssets.length===0?(
+              <div style={{textAlign:"center",padding:"60px 20px",color:C.textD}}>
+                <div style={{fontSize:32,marginBottom:12}}>☆</div>
+                <div style={{fontSize:13,marginBottom:6}}>No favourites yet</div>
+                <div style={{fontSize:11}}>Tap ☆ on any card in Markets to add here</div>
+              </div>
+            ):<>
+              <div style={{display:"flex",gap:8,marginBottom:16,overflowX:"auto",paddingBottom:4}}>
+                {favAssets.map(a=>{
+                  const p=gp(a.id),ch=gc(a.id),pos=ch>=0;
+                  return(
+                    <div key={a.id} style={{background:C.bg2,border:`1px solid ${C.star}30`,borderRadius:8,padding:"10px 14px",flexShrink:0,minWidth:100}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.textB,marginBottom:3}}>{a.symbol}</div>
+                      <div style={{fontSize:13,fontWeight:700,color:C.textB}}>{formatPrice(p)}</div>
+                      <div style={{fontSize:10,color:pos?C.green:C.red}}>{fmtCh(ch)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+                {favAssets.map(asset=>(
+                  <AssetCard key={asset.id} asset={asset} price={gp(asset.id)} change={gc(asset.id)} sparkline={sparks[asset.id]} isFav={true} onToggleFav={toggleFav}/>
+                ))}
+              </div>
+            </>}
+
+            <div style={{marginTop:24}}>
+              <SecTitle>Manage Watchlist</SecTitle>
+              <div style={{marginBottom:12}}>
+                <GlobalSearch compact onSelect={asset=>{addToWL(asset);toggleFav(asset);}}/>
+                <div style={{fontSize:9,color:C.textD,marginTop:4}}>Search to add new assets directly to favourites</div>
+              </div>
+              <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+                {watchlist.map((a,i)=>{
+                  const isFav=favIds.includes(a.id);
+                  return(
+                    <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:i<watchlist.length-1?`1px solid ${C.border2}`:"none"}}>
+                      <button onClick={()=>toggleFav(a)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:isFav?C.star:C.border,flexShrink:0,transition:"color 0.15s"}}>{isFav?"★":"☆"}</button>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:C.textB}}>{a.symbol}</div>
+                        <div style={{fontSize:10,color:C.textD,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}{a.exchange?` · ${a.exchange}`:""}</div>
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:C.textB}}>{formatPrice(gp(a.id))}</div>
+                        <div style={{fontSize:10,color:gc(a.id)>=0?C.green:C.red}}>{fmtCh(gc(a.id))}</div>
+                      </div>
+                      <button onClick={()=>removeFromWL(a.id)}
+                        style={{background:"none",border:"none",color:`${C.red}70`,cursor:"pointer",fontSize:18,flexShrink:0,marginLeft:4,transition:"color 0.15s"}}
+                        onMouseEnter={e=>e.currentTarget.style.color=C.red}
+                        onMouseLeave={e=>e.currentTarget.style.color=`${C.red}70`}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>}
+
+          {/* ══ PORTFOLIO ══ */}
+          {tab==="portfolio"&&<>
+            <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16}}>
+              <div style={{fontSize:10,color:C.textD,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>Total Portfolio Value</div>
+              <div style={{fontSize:30,fontWeight:700,color:C.textB}}>${totalVal.toLocaleString("en-US",{maximumFractionDigits:0})}</div>
+              <div style={{fontSize:13,color:totalPnl>=0?C.green:C.red,marginTop:4}}>
+                {totalPnl>=0?"▲":"▼"} ${Math.abs(totalPnl).toLocaleString("en-US",{maximumFractionDigits:0})} ({totalPct.toFixed(2)}%) all time
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+                {accounts.map(acc=>{
+                  const v=acc.holdings.reduce((s,h)=>s+gp(h.assetId)*h.qty,0);
+                  const T=ACCOUNT_TYPES[acc.type];
+                  return(
+                    <div key={acc.id} onClick={()=>setTab("accounts")} style={{fontSize:10,color:T.color,background:`${T.color}12`,border:`1px solid ${T.color}30`,borderRadius:4,padding:"4px 9px",cursor:"pointer"}}>
+                      {T.icon} {acc.name} · ${v.toLocaleString("en-US",{maximumFractionDigits:0})}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <SecTitle>Consolidated Holdings</SecTitle>
+            {Object.values(consol).map(h=>{
+              const price=gp(h.assetId),val=price*h.tQty,pnl=val-h.tCost;
+              const pct=h.tCost>0?(pnl/h.tCost)*100:0,pos=pnl>=0;
+              return(
+                <div key={h.assetId} className="acard" style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:14,marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div>
+                      <span style={{fontSize:14,fontWeight:700,color:C.textB}}>{h.symbol}</span>
+                      <span style={{fontSize:11,color:C.textD,marginLeft:8}}>{h.name}</span>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:14,fontWeight:700,color:C.textB}}>${val.toLocaleString("en-US",{maximumFractionDigits:0})}</div>
+                      <div style={{fontSize:11,color:pos?C.green:C.red}}>{pos?"+":""}{pct.toFixed(1)}% · {pos?"+":"-"}${Math.abs(pnl).toFixed(0)}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:C.textD,flexWrap:"wrap"}}>
+                    <span>Qty: <span style={{color:C.text}}>{h.tQty}</span></span>
+                    <span>Avg: <span style={{color:C.text}}>{formatPrice(h.tCost/h.tQty)}</span></span>
+                    <span>Now: <span style={{color:C.text}}>{formatPrice(price)}</span></span>
+                  </div>
+                  <div style={{marginTop:6,fontSize:9,color:C.textD}}>{h.accs.map((a,i)=><span key={i} style={{marginRight:6}}>· {a}</span>)}</div>
+                </div>
+              );
+            })}
+            {Object.keys(consol).length===0&&<div style={{textAlign:"center",padding:"50px 20px",color:C.textD,fontSize:12}}>No holdings yet.<br/>Go to <span style={{color:C.green,cursor:"pointer"}} onClick={()=>setTab("accounts")}>Accounts</span> to add positions.</div>}
+          </>}
+
+          {/* ══ ACCOUNTS ══ */}
+          {tab==="accounts"&&<>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <SecTitle>Accounts & Wallets</SecTitle>
+              <PBtn onClick={()=>setSheet("add_account")}>+ Add Account</PBtn>
+            </div>
+            {accounts.map(acc=>{
+              const T=ACCOUNT_TYPES[acc.type];
+              const accVal=acc.holdings.reduce((s,h)=>s+gp(h.assetId)*h.qty,0);
+              const open=openAcc===acc.id;
+              return(
+                <div key={acc.id} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,marginBottom:12,overflow:"hidden"}}>
+                  <div onClick={()=>setOpenAcc(open?null:acc.id)}
+                    style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:36,height:36,borderRadius:8,background:`${T.color}15`,border:`1px solid ${T.color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:T.color,flexShrink:0}}>{T.icon}</div>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:C.textB}}>{acc.name}</div>
+                        <div style={{fontSize:10,color:C.textD,textTransform:"uppercase",letterSpacing:"0.06em"}}>{T.label} · {acc.currency} · {acc.holdings.length} assets</div>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:14,fontWeight:700,color:C.textB}}>${accVal.toLocaleString("en-US",{maximumFractionDigits:0})}</div>
+                      <div style={{fontSize:11,color:C.textD}}>{open?"▲":"▼"}</div>
+                    </div>
+                  </div>
+                  {open&&<div style={{borderTop:`1px solid ${C.border2}`}}>
+                    {acc.holdings.map(h=>{
+                      const price=gp(h.assetId),val=price*h.qty,pnl=val-h.avgCost*h.qty,pos=pnl>=0;
+                      const pct=h.avgCost>0?(pnl/(h.avgCost*h.qty))*100:0;
+                      return(
+                        <div key={h.assetId} style={{padding:"12px 16px",borderBottom:`1px solid ${C.border2}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                            <div>
+                              <span style={{fontSize:13,fontWeight:700,color:C.textB}}>{h.symbol}</span>
+                              <span style={{fontSize:10,color:C.textD,marginLeft:7}}>{h.qty} @ {formatPrice(h.avgCost)}</span>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:13,fontWeight:700,color:C.textB}}>${val.toLocaleString("en-US",{maximumFractionDigits:0})}</div>
+                              <div style={{fontSize:11,color:pos?C.green:C.red}}>{pos?"+":""}{pct.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            <PBtn style={{padding:"5px 12px",fontSize:10}} onClick={()=>{setCtx({accId:acc.id,assetId:h.assetId,symbol:h.symbol});setTForm({type:"buy",qty:"",price:"",date:today()});setSheet("add_trade");}}>+ Trade</PBtn>
+                            <GBtn style={{padding:"5px 12px",fontSize:10}} onClick={()=>{setCtx({accId:acc.id,assetId:h.assetId});setSheet("view_trades");}}>History ({(h.trades||[]).length})</GBtn>
+                            <DBtn style={{padding:"5px 10px",fontSize:10}} onClick={()=>{if(window.confirm("Remove holding?"))removeHolding(acc.id,h.assetId);}}>✕</DBtn>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {acc.holdings.length===0&&<div style={{padding:"14px 16px",fontSize:11,color:C.textD,textAlign:"center"}}>No assets yet.</div>}
+                    <div style={{padding:"12px 16px",display:"flex",gap:10}}>
+                      <PBtn style={{flex:1}} onClick={()=>{setCtx({accId:acc.id});setHForm({assetObj:null,qty:"",cost:"",date:today()});setSheet("add_holding");}}>+ Add Asset</PBtn>
+                      <DBtn onClick={()=>{if(window.confirm(`Delete "${acc.name}"?`))deleteAccount(acc.id);}}>Delete</DBtn>
+                    </div>
+                  </div>}
+                </div>
+              );
+            })}
+            {accounts.length===0&&<div style={{textAlign:"center",padding:"60px 20px",color:C.textD,fontSize:12}}>No accounts yet.</div>}
+            <div style={{marginTop:12,fontSize:9,color:"#2a4a6a"}}>ⓘ All data stored locally in your browser · Nothing sent to any server</div>
+          </>}
+
+          {/* ══ NEWS ══ */}
+          {tab==="news"&&<>
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {["All","Crypto","Stocks","Indices","Commodities","Macro"].map(f=>(
+                <button key={f} onClick={()=>setNewsF(f)} style={{padding:"4px 12px",fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",borderRadius:4,fontFamily:"inherit",fontWeight:600,border:`1px solid ${newsF===f?C.green:C.border}`,background:newsF===f?`${C.green}15`:"transparent",color:newsF===f?C.green:C.textD}}>{f}</button>
+              ))}
+            </div>
+            <div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,padding:"2px 16px"}}>
+              {filtNews.map((item,i)=>(
+                <div key={i} style={{padding:"14px 0",borderBottom:i<filtNews.length-1?`1px solid ${C.border2}`:"none"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:5,flexWrap:"wrap"}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:item.sentiment==="bullish"?C.green:item.sentiment==="bearish"?C.red:C.amber}}/>
+                    <span style={{fontSize:9,color:C.textD,textTransform:"uppercase",letterSpacing:"0.08em"}}>{item.tag}</span>
+                    <span style={{fontSize:9,color:C.textD}}>· {item.source} · {item.time}</span>
+                  </div>
+                  <div style={{fontSize:12,color:C.text,lineHeight:1.5}}>{item.title}</div>
+                </div>
+              ))}
+            </div>
+          </>}
+
+        </div>
+      </div>
+
+      {/* BOTTOM NAV */}
+      <div className="bnav safe-bottom" style={{position:"fixed",bottom:0,left:0,right:0,background:C.bg2,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:50}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"9px 4px 7px",background:"none",border:"none",color:tab===t.id?(t.id==="favourites"?C.star:C.green):C.textD,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"inherit",transition:"color 0.15s",position:"relative"}}>
+            <span style={{fontSize:13}}>{t.icon}</span>
+            <span style={{fontSize:8,letterSpacing:"0.06em",textTransform:"uppercase",fontWeight:600}}>{t.label}</span>
+            {t.id==="favourites"&&favIds.length>0&&(
+              <span style={{position:"absolute",top:5,right:"18%",fontSize:8,background:C.star,color:C.bg,borderRadius:8,padding:"0 4px",fontWeight:700,minWidth:14,textAlign:"center"}}>{favIds.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ══ SHEETS ══ */}
+      {sheet==="add_account"&&(
+        <Sheet title="Add Account / Wallet" onClose={()=>setSheet(null)}>
+          <div style={{marginBottom:12}}><label style={lbl}>Account Name</label><input style={inp} value={aForm.name} onChange={e=>setAForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Coinbase, Ledger, IBKR…"/></div>
+          <div style={{marginBottom:12}}><label style={lbl}>Type</label>
+            <select style={inp} value={aForm.type} onChange={e=>setAForm(f=>({...f,type:e.target.value}))}>
+              {Object.entries(ACCOUNT_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:20}}><label style={lbl}>Base Currency</label>
+            <select style={inp} value={aForm.currency} onChange={e=>setAForm(f=>({...f,currency:e.target.value}))}>
+              {["USD","GBP","EUR","AUD","CAD","JPY","HKD","CHF"].map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <PBtn style={{width:"100%"}} onClick={doAddAccount}>Create Account</PBtn>
+        </Sheet>
+      )}
+
+      {sheet==="add_holding"&&(
+        <Sheet title="Add Asset to Account" onClose={()=>setSheet(null)}>
+          <div style={{marginBottom:14}}>
+            <label style={lbl}>Search Asset — Global Markets</label>
+            <GlobalSearch onSelect={asset=>{addToWL(asset);setHForm(f=>({...f,assetObj:asset}));}}/>
+          </div>
+          {hForm.assetObj?(
+            <div style={{display:"flex",alignItems:"center",gap:10,background:`${C.green}12`,border:`1px solid ${C.green}40`,borderRadius:8,padding:"11px 14px",marginBottom:16}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:700,color:C.textB}}>{hForm.assetObj.symbol}
+                  {hForm.assetObj.exchange&&<span style={{fontSize:10,color:C.textD,marginLeft:8}}>{exFlag(hForm.assetObj.exchange)} {hForm.assetObj.exchange}</span>}
+                </div>
+                <div style={{fontSize:11,color:C.textD,marginTop:1}}>{hForm.assetObj.name}</div>
+              </div>
+              <button onClick={()=>setHForm(f=>({...f,assetObj:null}))} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
+            </div>
+          ):(
+            <div style={{marginBottom:14,fontSize:11,color:C.textD,textAlign:"center",padding:"10px",background:C.bg3,borderRadius:6,border:`1px solid ${C.border}`}}>
+              Search above — stocks, ETFs, crypto, indices from any exchange
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div><label style={lbl}>Quantity</label><input style={inp} type="number" value={hForm.qty} onChange={e=>setHForm(f=>({...f,qty:e.target.value}))} placeholder="0.0"/></div>
+            <div><label style={lbl}>Price per unit ($)</label><input style={inp} type="number" value={hForm.cost} onChange={e=>setHForm(f=>({...f,cost:e.target.value}))} placeholder="0.00"/></div>
+          </div>
+          <div style={{marginBottom:16}}><label style={lbl}>Purchase Date</label><input style={inp} type="date" value={hForm.date} onChange={e=>setHForm(f=>({...f,date:e.target.value}))}/></div>
+          {hForm.qty&&hForm.cost&&(
+            <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:11,color:C.textD}}>
+              Total: <span style={{color:C.textB,fontWeight:700}}>${(parseFloat(hForm.qty)*parseFloat(hForm.cost)).toLocaleString("en-US",{maximumFractionDigits:2})}</span>
+            </div>
+          )}
+          <PBtn style={{width:"100%"}} disabled={!hForm.assetObj} onClick={()=>doAddHolding(ctx.accId)}>
+            {hForm.assetObj?`Add ${hForm.assetObj.symbol} to Portfolio`:"Select an asset above first"}
+          </PBtn>
+        </Sheet>
+      )}
+
+      {sheet==="add_trade"&&(
+        <Sheet title={`Log Trade — ${ctx.symbol}`} onClose={()=>setSheet(null)}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+            {["buy","sell"].map(t=>(
+              <button key={t} onClick={()=>setTForm(f=>({...f,type:t}))} style={{padding:"10px",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:"0.1em",border:`1px solid ${tForm.type===t?(t==="buy"?C.green:C.red):C.border}`,background:tForm.type===t?(t==="buy"?`${C.green}18`:`${C.red}18`):"transparent",color:tForm.type===t?(t==="buy"?C.green:C.red):C.textD}}>{t==="buy"?"▲ Buy":"▼ Sell"}</button>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div><label style={lbl}>Quantity</label><input style={inp} type="number" value={tForm.qty} onChange={e=>setTForm(f=>({...f,qty:e.target.value}))} placeholder="0.0"/></div>
+            <div><label style={lbl}>Price ($)</label><input style={inp} type="number" value={tForm.price} onChange={e=>setTForm(f=>({...f,price:e.target.value}))} placeholder="0.00"/></div>
+          </div>
+          <div style={{marginBottom:14}}><label style={lbl}>Date</label><input style={inp} type="date" value={tForm.date} onChange={e=>setTForm(f=>({...f,date:e.target.value}))}/></div>
+          {tForm.qty&&tForm.price&&(
+            <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:11,color:C.textD}}>
+              Total: <span style={{color:C.textB,fontWeight:700}}>${(parseFloat(tForm.qty)*parseFloat(tForm.price)).toLocaleString("en-US",{maximumFractionDigits:2})}</span>
+            </div>
+          )}
+          <PBtn style={{width:"100%"}} onClick={()=>doAddTrade(ctx.accId,ctx.assetId)}>Confirm Trade</PBtn>
+        </Sheet>
+      )}
+
+      {sheet==="view_trades"&&(()=>{
+        const acc=accounts.find(a=>a.id===ctx.accId);
+        const h=acc?.holdings.find(h=>h.assetId===ctx.assetId);
+        if(!h) return null;
+        return(
+          <Sheet title={`${h.symbol} Trade History`} onClose={()=>setSheet(null)}>
+            {[...(h.trades||[])].reverse().map((t,i)=>(
+              <div key={i} style={{padding:"11px 0",borderBottom:`1px solid ${C.border2}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <span style={{fontSize:11,fontWeight:700,color:t.type==="buy"?C.green:C.red,textTransform:"uppercase"}}>{t.type}</span>
+                  <span style={{fontSize:11,color:C.textD,marginLeft:8}}>{t.date}</span>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:12,color:C.textB}}>{t.qty} @ {formatPrice(t.price)}</div>
+                  <div style={{fontSize:10,color:C.textD}}>${(t.qty*t.price).toLocaleString("en-US",{maximumFractionDigits:0})}</div>
+                </div>
+              </div>
+            ))}
+            {(h.trades||[]).length===0&&<div style={{textAlign:"center",padding:24,color:C.textD,fontSize:12}}>No trades recorded.</div>}
+            <div style={{marginTop:14,padding:"10px 14px",background:C.bg3,borderRadius:6,border:`1px solid ${C.border}`,fontSize:11}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{color:C.textD}}>Current Qty</span><span style={{color:C.textB}}>{h.qty}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:C.textD}}>Avg Cost</span><span style={{color:C.textB}}>{formatPrice(h.avgCost)}</span>
+              </div>
+            </div>
+          </Sheet>
+        );
+      })()}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
